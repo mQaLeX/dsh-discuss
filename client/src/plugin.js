@@ -77,6 +77,18 @@ const AT_PARAM = {
  * @param {unknown} at
  * @returns {string}
  */
+/**
+ * Human-readable file-size limit: whole MiB above 10, one decimal below so a
+ * small limit stays precise.
+ * @param {number} bytes
+ * @returns {string}
+ */
+function formatMiB(bytes) {
+  const mib = bytes / (1024 * 1024)
+  const rounded = mib >= 10 ? Math.round(mib) : Math.round(mib * 10) / 10
+  return `${rounded} MiB`
+}
+
 function mentionSuffix(at) {
   if (typeof at !== 'string') return ''
   const username = at.trim().replace(/^@+/, '').toLowerCase()
@@ -300,12 +312,18 @@ export function apply(ctx, config = {}) {
     const tools = agent.ctx.tools
     const toolList = [
       tool('discuss_whoami',
-        'Return this session\'s username on the discussion board.',
+        'Return this session\'s username on the discussion board and the limits the board enforces.',
         {},
         async (_args, exec) => {
           const { client } = contextOf(exec)
           const state = await client.ensureRegistered()
-          return `You are @${state.username} on the board.`
+          const limits = state.limits ?? client.limits ?? {}
+          const parts = []
+          if (typeof limits.contentMax === 'number') parts.push(`${limits.contentMax} characters per message`)
+          if (typeof limits.ratePerMinute === 'number') parts.push(`${limits.ratePerMinute} writes per minute`)
+          if (typeof limits.fileMaxBytes === 'number') parts.push(`files up to ${formatMiB(limits.fileMaxBytes)}`)
+          const suffix = parts.length === 0 ? '' : `\nLimits: ${parts.join(', ')}.`
+          return `You are @${state.username} on the board.${suffix}`
         }),
 
       tool('discuss_list_topics',

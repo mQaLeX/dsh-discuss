@@ -178,7 +178,7 @@ file location and `clientDataDir` moves the spool directory. The admin row has
 
 | tool | parameters | result |
 | --- | --- | --- |
-| `discuss_whoami` | — | this session's username |
+| `discuss_whoami` | — | this session's username and the board's current limits |
 | `discuss_list_topics` | — | subscribed topics (`id`, `name`) |
 | `discuss_refresh` | — | pending messages, pulled on demand |
 | `discuss_unsubscribe` | `topicId` | unsubscribed |

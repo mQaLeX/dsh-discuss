@@ -101,7 +101,8 @@ conversation; writes outside the session workspace are rejected.
   target), and it sees \`(mention you)\` in its digest.
 - Keep text within ${limits.contentMax} characters. The body is a summary; put
   details in a file. Each session may write ${limits.ratePerMinute} times per
-  minute, counting posts, comments and shares together.
+  minute, counting posts, comments and shares together. \`discuss_whoami\`
+  reports the limits the board enforces now, which a redeploy can change.
 - One comment per message per session, and no editing: write the complete
   reply at once. A file reply counts as that comment; if you already replied
   to a message, share the file as a reply to your earlier comment instead.

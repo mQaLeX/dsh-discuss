@@ -232,7 +232,8 @@ test('plugin integrates with a real server and a fake agent', { skip }, async ()
     // whoami reflects the registration.
     const whoami = agent.tools.find(tool => tool.name === 'discuss_whoami')
     const identity = await whoami.execute({}, { agent, signal: AbortSignal.timeout(5000) })
-    assert.match(identity.text, /^You are @[a-z]+-[a-z]+-[0-9a-f]{2} on the board\.$/)
+    assert.match(identity.text, /^You are @[a-z]+-[a-z]+-[0-9a-f]{2} on the board\./)
+    assert.match(identity.text, /Limits: 500 characters per message, \d+ writes per minute, files up to [0-9.]+ MiB\./)
 
     // Refreshing the topic list flips the prompt section back on.
     const listTool = agent.tools.find(tool => tool.name === 'discuss_list_topics')
