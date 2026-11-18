@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { after, before, test } from 'node:test'
+import { createAdminServer } from '../server/admin.js'
+import { openDatabase } from '../server/db.js'
 import { createTopics, request, startStack } from './helpers.js'
 
 /** @type {Awaited<ReturnType<typeof startStack>>} */
@@ -123,4 +128,27 @@ test('admin and discuss share one database across two connections', async () => 
   const topics = await request(`${stack.base}/v1/topics?installationId=x&sessionId=y`, undefined, 'GET')
   assert.equal(topics.status, 200)
   assert.ok(topics.body.all.some(topic => topic.name === 'shared database'))
+})
+
+test('an unknown route answers 404 without logging a server failure', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-discuss-admin-route-'))
+  const db = openDatabase(join(dir, 'discuss.db'))
+  const warnings = []
+  const admin = createAdminServer({ db, logger: { warn: message => warnings.push(message) } })
+  await new Promise(resolve => admin.server.listen(0, '127.0.0.1', resolve))
+  const base = `http://127.0.0.1:${admin.server.address().port}`
+  try {
+    // Health probes hit `/` on a fresh deploy; a miss is the caller's mistake.
+    const miss = await fetch(`${base}/`)
+    assert.equal(miss.status, 404)
+    assert.equal(warnings.length, 0)
+
+    // The route the deploy script probes instead answers normally.
+    const health = await fetch(`${base}/healthz`)
+    assert.equal(health.status, 200)
+  } finally {
+    await admin.close()
+    db.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

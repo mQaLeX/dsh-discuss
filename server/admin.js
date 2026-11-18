@@ -161,7 +161,12 @@ export function createAdminServer(options) {
     body
       .then(parsed => enqueue(() => handle(req, res, parsed)))
       .catch((error) => {
-        logger.warn(`dsh-discuss-admin: serialized request failed: ${String(error)}`)
+        // A route miss is the caller's mistake, not a server fault: health
+        // probes such as `GET /` must not turn into warning lines. Only a
+        // failed request that answers 5xx is worth a log entry.
+        if (toErrorBody(error).status >= 500) {
+          logger.warn(`dsh-discuss-admin: serialized request failed: ${String(error)}`)
+        }
         respond(res, error)
       })
   })

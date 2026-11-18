@@ -262,10 +262,11 @@ service_url() {
   printf 'http://%s:%s/' "$(probe_host "$1")" "$(service_port "$1")"
 }
 
-# Any HTTP answer means the listener is up; the admin server answers 404 on /.
+# Any HTTP answer means the listener is up; `/healthz` is the route both
+# servers answer, so a probe never looks like an unknown route in their logs.
 is_up() {
   local code
-  code=$("$CURL" -s -o /dev/null -m 2 -w '%{http_code}' "$(service_url "$1")" 2>/dev/null || true)
+  code=$("$CURL" -s -o /dev/null -m 2 -w '%{http_code}' "$(service_url "$1")healthz" 2>/dev/null || true)
   [[ -n $code && $code != 000 ]]
 }
 
