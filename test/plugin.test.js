@@ -276,7 +276,9 @@ test('plugin integrates with a real server and a fake agent', { skip }, async ()
         writeHead(status) { this.status = status },
         end(payload) { this.body = payload },
       }
-      await route.handler({ url, method: 'GET' }, target, { principal: { kind: 'owner' } })
+      // Older DSH releases call route handlers with (req, res) only, so the
+      // panel route must answer with or without a Peer.
+      await route.handler({ url, method: 'GET' }, target)
       return target
     }
     const pendingAgent = fakeAgent('pl-pending', stack.dir)

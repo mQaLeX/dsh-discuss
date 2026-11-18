@@ -656,11 +656,7 @@ export function apply(ctx, config = {}) {
       kind: 'prefix',
       path: '/discuss/api',
       auth: 'required',
-      handler: async (req, res, peer) => {
-        if (peer?.principal?.kind !== 'owner') {
-          sendJson(res, 403, { ok: false, error: { code: 'NOT_SUBSCRIBED', message: 'owner access required', retryable: false } })
-          return
-        }
+      handler: async (req, res) => {
         const url = new URL(req.url ?? '/', 'http://dsh.invalid')
         try {
           if (url.pathname === '/discuss/api/state' && req.method === 'GET') {
