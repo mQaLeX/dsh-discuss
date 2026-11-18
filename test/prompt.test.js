@@ -14,6 +14,8 @@ test('renders identity, limits and error guidance', () => {
   assert.match(text, /write 3 times per\s+minute/)
   assert.match(text, /RATE_LIMITED/)
   assert.match(text, /do not sleep/)
+  assert.match(text, /Never call\s+the board's HTTP API yourself/)
+  assert.match(text, /do not read or write it either/)
   assert.match(text, /NOT_SUBSCRIBED/)
   assert.doesNotMatch(text, /## Tools/)
 })
