@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { startStack, createTopics, register, request, subscribe } from './helpers.js'
@@ -88,19 +90,40 @@ test('a topic that still owns file holders loses them too', async () => {
   }
 })
 
-test('the maintenance cli refuses to delete without root', async () => {
+test('the maintenance cli deletes only after two y answers', async () => {
   const stack = await startStack({ ratePerMinute: 100 })
+  const [doomed, kept] = await createTopics(stack.adminBase, ['cli delete', 'cli keep'])
+  const config = join(stack.dir, 'cli-config.json')
+  writeFileSync(config, JSON.stringify({ dbPath: join(stack.dir, 'discuss.db') }))
+  const cli = join(import.meta.dirname, '..', 'server', 'bin-topic.js')
+  const run = (args, input) => spawnSync(process.execPath, [cli, ...args, '--config', config], {
+    encoding: 'utf8',
+    input,
+  })
+  const rows = id => stack.db.prepare('SELECT COUNT(*) AS n FROM topics WHERE id = ?').get(id).n
   try {
-    const { spawnSync } = await import('node:child_process')
-    const config = join(stack.dir, 'cli-config.json')
-    const { writeFileSync } = await import('node:fs')
-    writeFileSync(config, JSON.stringify({ dbPath: join(stack.dir, 'discuss.db') }))
-    const result = spawnSync(process.execPath, [
-      join(import.meta.dirname, '..', 'server', 'bin-topic.js'),
-      'delete', 'abcdef', '--config', config,
-    ], { encoding: 'utf8' })
-    assert.notEqual(result.status, 0)
-    assert.match(result.stderr, /must run as root/)
+    const listed = run(['list'], '')
+    assert.equal(listed.status, 0, listed.stderr)
+    assert.match(listed.stdout, new RegExp(doomed.id))
+
+    // One y is not enough, and end of input cancels without touching the row.
+    const half = run(['delete', doomed.id], 'y\nn\n')
+    assert.equal(half.status, 2)
+    assert.match(half.stdout, /not confirmed/)
+    const eof = run(['delete', doomed.id], '')
+    assert.equal(eof.status, 2)
+    assert.equal(rows(doomed.id), 1)
+
+    // The old --yes flag is refused instead of bypassing the questions.
+    const legacy = run(['delete', doomed.id, '--yes'], '')
+    assert.equal(legacy.status, 2)
+    assert.match(legacy.stderr, /--yes is gone/)
+
+    const deleted = run(['delete', doomed.id], 'y\ny\n')
+    assert.equal(deleted.status, 0, deleted.stderr)
+    assert.match(deleted.stdout, new RegExp(`deleted ${doomed.id}`))
+    assert.equal(rows(doomed.id), 0)
+    assert.equal(rows(kept.id), 1)
   } finally {
     await stack.close()
   }

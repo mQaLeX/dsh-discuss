@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 /**
- * Root-only maintenance for the discussion board's topics.
+ * Maintenance for the discussion board's topics, run as the deployment user.
  *
- *   sudo -E node server/bin-topic.js list
- *   sudo -E node server/bin-topic.js delete <topicId>          # prints what would go
- *   sudo -E node server/bin-topic.js delete <topicId> --yes    # deletes it
+ *   node server/bin-topic.js list
+ *   node server/bin-topic.js delete <topicId>          # asks twice, then deletes
  *
  * Deleting a topic removes its messages, subscriptions, queued mail and holder
  * rows. File bytes are untouched: they live on the agents' hosts and the store
@@ -12,17 +11,22 @@
  *
  * This is deliberately not an HTTP endpoint. The board is an ordinary process
  * owned by the deployment user, so anything it exposes is reachable by that
- * user — which includes every agent session. Requiring euid 0 is the only
- * gate an agent cannot pass; after the check the tool drops to the database
- * owner so the WAL files keep their ownership.
+ * user; a command that only runs as the database owner stays a local operator
+ * action on the board host instead. Agents on that machine run as a different
+ * user, so the CLI is out of their reach — keep it that way if the board host
+ * ever also runs agent sessions.
  *
  * Options:
  *   --config PATH   board config (default: the server's own resolution order)
- *   --yes, -y       actually delete (without it, delete only previews)
+ *
+ * `delete` asks for two `y` answers on the terminal before it touches anything:
+ * the first after the census, the second as the final confirmation. Without
+ * them the command exits 2 and deletes nothing.
  */
 
 import { statSync, appendFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { loadServerConfig } from './config-file.js'
 import { resolveServerConfig } from './config.js'
@@ -36,26 +40,24 @@ function fail(message, code = 1) {
 
 function usage() {
   const header = process.argv[1] === undefined ? 'bin-topic' : 'server/bin-topic.js'
-  process.stdout.write(`usage: sudo -E node ${header} <command> [options]
+  process.stdout.write(`usage: node ${header} <command> [options]
 
-  list                          every topic with what it holds
-  delete <topicId> [--yes]      delete one topic; without --yes it only previews
+  list                    every topic with what it holds
+  delete <topicId>        delete one topic; asks for two y answers first
 
 options:
-  --config PATH                 board config file
-  --yes, -y                     confirm the deletion
+  --config PATH           board config file
 `)
 }
 
-/** @returns {{ command: string, target: string | undefined, configPath: string | undefined, yes: boolean }} */
+/** @returns {{ command: string, target: string | undefined, configPath: string | undefined }} */
 function parseArgs(argv) {
   const positional = []
   let configPath
-  let yes = false
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
     if (arg === '--yes' || arg === '-y') {
-      yes = true
+      fail('--yes is gone: delete asks for two y answers on the terminal', 2)
     } else if (arg === '--config') {
       const value = argv[index + 1]
       if (value === undefined) fail('--config needs a path', 2)
@@ -70,40 +72,30 @@ function parseArgs(argv) {
       positional.push(arg)
     }
   }
-  return { command: positional[0] ?? '', target: positional[1], configPath, yes }
+  return { command: positional[0] ?? '', target: positional[1], configPath }
 }
 
 /**
- * Refuse to run for anyone but root. Agents and other local users share the
- * deployment account, so this is the one boundary they cannot cross.
- */
-function requireRoot() {
-  if (typeof process.geteuid !== 'function' || process.geteuid() !== 0) {
-    fail('this command must run as root: sudo -E node server/bin-topic.js …')
-  }
-}
-
-/**
- * Hand the process to the database owner after the root check, so the files the
- * delete touches (and any WAL segment it creates) stay owned by the service
- * account instead of root.
+ * Deletion is a local operator action: it must run as the user that owns the
+ * database, which on a deployment is the board's service account. That needs no
+ * root on the host, keeps any WAL segment it touches under the same owner, and
+ * still leaves the CLI out of reach of agent sessions, which run as another
+ * user on that machine.
  * @param {string} databasePath
  */
-function dropToDatabaseOwner(databasePath) {
+function requireDatabaseOwner(databasePath) {
   let info
   try {
     info = statSync(databasePath)
   } catch {
     fail(`database not found: ${databasePath}`)
   }
-  if (info.uid === process.geteuid()) return
-  try {
-    process.setgroups?.([info.gid])
-  } catch {
-    // Not every platform allows it; the gid change below is what matters.
+  const euid = typeof process.geteuid === 'function' ? process.geteuid() : -1
+  if (euid !== info.uid) {
+    fail(`this command must run as the database owner (uid ${info.uid}): `
+      + 'run it as the deployment user, for example '
+      + 'sudo -u <deployment user> node server/bin-topic.js …')
   }
-  process.setgid(info.gid)
-  process.setuid(info.uid)
 }
 
 /** @param {string} databasePath @param {Record<string, any>} entry */
@@ -134,7 +126,56 @@ function openBoard(configPath) {
   return { config, databasePath }
 }
 
-const { command, target, configPath, yes } = parseArgs(process.argv.slice(2))
+/**
+ * Line-by-line stdin with prompts on stdout. One reader serves every question:
+ * a fresh readline interface per question loses piped input in Node.
+ * @param {NodeJS.ReadStream} input
+ */
+function lineReader(input) {
+  const rl = createInterface({ input, terminal: Boolean(input.isTTY) })
+  const queued = []
+  const waiting = []
+  let ended = false
+  rl.on('line', (line) => {
+    const resume = waiting.shift()
+    if (resume === undefined) queued.push(line)
+    else resume(line)
+  })
+  rl.on('close', () => {
+    ended = true
+    for (const resume of waiting.splice(0)) resume(null)
+  })
+  return {
+    next() {
+      if (queued.length > 0) return Promise.resolve(queued.shift())
+      if (ended) return Promise.resolve(null)
+      return new Promise((resolve) => { waiting.push(resolve) })
+    },
+    close() { rl.close() },
+  }
+}
+
+/**
+ * Two separate hand-typed confirmations: a `y` after the census, then another
+ * `y` on its own prompt. Anything else, including end of input, cancels.
+ * @param {{ id: string, name: string, messages: number, subscriptions: number, mailbox: number }} census
+ */
+async function confirmDelete(census) {
+  const lines = lineReader(process.stdin)
+  try {
+    process.stdout.write(`Delete topic ${census.id} "${census.name}" with ${census.messages} messages, `
+      + `${census.subscriptions} subscriptions and ${census.mailbox} queued mail rows? [y/N] `)
+    const first = await lines.next()
+    if (first === null || first.trim().toLowerCase() !== 'y') return false
+    process.stdout.write(`Type y again to delete ${census.id} permanently: `)
+    const second = await lines.next()
+    return second !== null && second.trim().toLowerCase() === 'y'
+  } finally {
+    lines.close()
+  }
+}
+
+const { command, target, configPath } = parseArgs(process.argv.slice(2))
 
 if (command === '') {
   usage()
@@ -170,8 +211,7 @@ if (command === 'list') {
 if (command !== 'delete') fail(`unknown command: ${command}`, 2)
 if (target === undefined) fail('delete needs a topic id', 2)
 
-requireRoot()
-dropToDatabaseOwner(databasePath)
+requireDatabaseOwner(databasePath)
 
 const db = openDatabase(databasePath)
 let census
@@ -189,9 +229,9 @@ process.stdout.write(
   + `  holder rows    ${census.holders}\n`,
 )
 
-if (!yes) {
+if (!(await confirmDelete(census))) {
   db.close()
-  process.stdout.write('\npreview only: re-run with --yes to delete\n')
+  process.stdout.write('\nnot confirmed: nothing was deleted\n')
   process.exit(2)
 }
 

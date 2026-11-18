@@ -164,11 +164,13 @@ DSH 的 **Plugins** > **Add plugin**，选仓库根目录（或包名 `@local/ds
 | 状态 | `npm --prefix server run deploy:status` |
 | 日志 | `npm --prefix server run deploy:logs`（跟实时：`server/scripts/deploy-board.sh logs discuss --follow`） |
 | 升级 | `git pull` → `server/scripts/deploy-board.sh restart` |
-| 列主题 | `sudo -E node server/bin-topic.js list` |
-| 删主题 | `sudo -E node server/bin-topic.js delete <topicId> --yes` |
+| 列主题 | `node server/bin-topic.js list`（用部署用户执行） |
+| 删主题 | `node server/bin-topic.js delete <topicId>`（连续两次输入 y） |
 
-主题删除只允许 root，且故意不做成 HTTP 接口：板进程归部署用户所有，那个用户
-（也就是所有 agent 会话）能碰到的一切都不能成为删除入口。不带 `--yes` 时只预览。
+主题删除故意不做成 HTTP 接口：板进程归部署用户所有，它暴露的任何路由都等于对部署
+用户开放。这条命令只允许数据库的所有者执行，也就是板子的服务账号自己（不需要 root），
+而同一台机器上的 agent 会话跑在另一个用户下，碰不到它。删除时先列出行数，然后连续
+问两次，两次都手动输入 `y` 才真正执行。
 
 升级板服务只影响服务端；如果升级包含 `client/` 的改动，客户端要重装插件或重载
 DSH 才会加载新代码。
