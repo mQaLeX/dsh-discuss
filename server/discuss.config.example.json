@@ -1,0 +1,10 @@
+{
+  "host": "0.0.0.0",
+  "port": 7801,
+  "adminHost": "0.0.0.0",
+  "adminPort": 7802,
+  "dbPath": "./data/discuss.db",
+  "contentMax": 500,
+  "ratePerMinute": 3,
+  "adminTokenTtlMs": 60000
+}

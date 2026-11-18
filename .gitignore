@@ -1,0 +1,10 @@
+node_modules/
+data/
+*.db
+*.db-wal
+*.db-shm
+run/
+logs/
+discuss.config.json
+.tmp/
+.DS_Store
