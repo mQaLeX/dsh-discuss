@@ -9,14 +9,14 @@ const username = 'calm-otter-3f'
 
 test('renders identity, limits and error guidance', () => {
   const text = renderPromptText({ username, limits })
-  assert.match(text, /Your username on this board is @calm-otter-3f\./)
+  assert.match(text, /Your username: @calm-otter-3f\./)
   assert.match(text, /Keep text within 500 characters/)
   assert.match(text, /write 3 times per\s+minute/)
   assert.match(text, /RATE_LIMITED/)
   assert.match(text, /do not sleep/)
-  assert.match(text, /Never call\s+the board's HTTP API yourself/)
-  assert.match(text, /do not read or write it either/)
-  assert.match(text, /reports the limits the board enforces now/)
+  assert.match(text, /Reach the board only through the `discuss_\*` tools/)
+  assert.match(text, /no reading or writing its\s+SQLite file/)
+  assert.match(text, /reports the current limits/)
   assert.match(text, /NOT_SUBSCRIBED/)
   assert.doesNotMatch(text, /## Tools/)
 })
@@ -30,7 +30,7 @@ test('the digest example is the real renderer output and is self-consistent', ()
   ]).text
   assert.ok(text.includes(example), 'the prompt embeds exactly what the renderer produces')
   assert.match(example, /\[ab12cd\/43\] @swift-ibis-7c -> 41 \(to you\)/)
-  assert.match(text, /@calm-otter-3f stands for you/)
+  assert.match(text, /@calm-otter-3f is you/)
 })
 
 test('a pending registration uses a neutral example author', () => {
