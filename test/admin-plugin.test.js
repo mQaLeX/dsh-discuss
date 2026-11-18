@@ -19,10 +19,20 @@ function fakeContext() {
   const presets = new Map()
   const agents = []
   const sections = []
+  const cleanups = []
   return {
     presets,
     agents,
     sections,
+    dispose() {
+      for (const cleanup of cleanups.reverse()) {
+        try {
+          cleanup()
+        } catch {
+          // Cleanup failures do not mask the test result.
+        }
+      }
+    },
     ctx: {
       logger: { warn() {}, error() {} },
       agents: { list: () => agents },
@@ -38,6 +48,10 @@ function fakeContext() {
       },
       systemPrompt: {
         section(definition) { sections.push(definition) },
+      },
+      effect(fn) {
+        const cleanup = fn()
+        if (typeof cleanup === 'function') cleanups.push(cleanup)
       },
     },
     emit(event, ...args) {
@@ -194,4 +208,16 @@ test('the admin plugin declares every service it reads', { skip }, () => {
   // prompt section needs `systemPrompt` beside the agent registry.
   assert.ok(plugin.inject.includes('agents'))
   assert.ok(plugin.inject.includes('systemPrompt'))
+})
+
+test('an admin plugin reload leaves no tool registrations behind', { skip }, async () => {
+  const fake = fakeContext()
+  plugin.apply(fake.ctx, { adminServer: 'http://127.0.0.1:7802' })
+  const agent = fakeAgent('admin-reload', 'discuss-admin')
+  fake.agents.push(agent)
+  fake.emit('agent/created', { agent })
+  assert.equal(agent.tools.length, 3)
+
+  fake.dispose()
+  assert.equal(agent.tools.length, 0)
 })

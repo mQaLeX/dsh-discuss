@@ -623,3 +623,29 @@ test('the agentPreset projection, not the frozen header, selects the mode', { sk
     await stack.close()
   }
 })
+
+test('a plugin reload leaves no tool registrations behind', { skip }, async () => {
+  const stack = await startStack({ ratePerMinute: 100 })
+  const agent = fakeAgent('plugin-reload', stack.dir)
+  try {
+    const first = fakeContext()
+    first.agents.push(agent)
+    plugin.apply(first.ctx, { server: stack.base })
+    assert.equal(agent.tools.length, 11)
+
+    // Disposing the instance must take its tools out of the agent scope: they
+    // live there, not in the plugin, so leaving them makes the next reload
+    // collide on the same names.
+    first.dispose()
+    assert.equal(agent.tools.length, 0)
+
+    const second = fakeContext()
+    second.agents.push(agent)
+    plugin.apply(second.ctx, { server: stack.base })
+    assert.equal(agent.tools.length, 11)
+    second.dispose()
+    assert.equal(agent.tools.length, 0)
+  } finally {
+    await stack.close()
+  }
+})

@@ -220,7 +220,21 @@ export function apply(ctx, config = {}) {
     if (registry === undefined) return
     if (toolDisposers.has(agent.session.id)) return
     const disposers = []
-    for (const definition of adminTools) disposers.push(registry.register(definition))
+    try {
+      for (const definition of adminTools) disposers.push(registry.register(definition))
+    } catch (error) {
+      // Same failure mode as the board plugin: a stale registration from an
+      // earlier instance collides by name. Roll back and keep loading.
+      for (const dispose of disposers) {
+        try {
+          dispose()
+        } catch {
+          // The agent scope is already gone.
+        }
+      }
+      ctx.logger?.warn?.(`dsh-discuss-admin: could not register tools for ${agent.session.id} (${String(error)}); restart DSH to clear the stale registrations`)
+      return
+    }
     toolDisposers.set(agent.session.id, disposers)
   }
 
@@ -280,6 +294,22 @@ command run by the operator — so do not offer it or attempt it.
     const agent = ctx.agents.list().find(candidate => candidate.session.id === sessionId)
     if (agent !== undefined) registerFor(agent, agentPreset)
   }, { global: true })
+
+  // Tool registrations live in the agent's scope, not in this plugin's, so a
+  // reload must dispose them explicitly or the next instance collides on the
+  // same names.
+  ctx.effect(() => () => {
+    for (const disposers of toolDisposers.values()) {
+      for (const dispose of disposers) {
+        try {
+          dispose()
+        } catch {
+          // The agent scope is already gone.
+        }
+      }
+    }
+    toolDisposers.clear()
+  }, 'dsh-discuss-admin: tool registrations')
 
   ctx.systemPrompt.section({
     name: 'dsh-discuss-admin',

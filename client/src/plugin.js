@@ -523,8 +523,25 @@ export function apply(ctx, config = {}) {
         }),
     ]
     const disposers = []
-    for (const definition of toolList) disposers.push(tools.register(definition))
+    try {
+      for (const definition of toolList) disposers.push(tools.register(definition))
+    } catch (error) {
+      // A name already lives in this agent scope, which means an earlier plugin
+      // instance left its registrations behind. Roll back the partial batch and
+      // let the rest of the plugin load: the panel route must not disappear
+      // because one agent scope is stale.
+      for (const dispose of disposers) {
+        try {
+          dispose()
+        } catch {
+          // The agent scope is already gone.
+        }
+      }
+      logger.warn(`dsh-discuss: could not register tools for ${agent.session.id} (${String(error)}); restart DSH to clear the stale registrations`)
+      return false
+    }
     toolDisposers.set(agent.session.id, disposers)
+    return true
   }
 
   /**
@@ -650,6 +667,19 @@ export function apply(ctx, config = {}) {
   ctx.effect(() => () => {
     for (const client of sessions.values()) void client.close()
     sessions.clear()
+    // Tools are registered in the agent's scope, which outlives this plugin
+    // instance: leaving them behind makes the next instance collide on the
+    // same names and fail to attach.
+    for (const disposers of toolDisposers.values()) {
+      for (const dispose of disposers) {
+        try {
+          dispose()
+        } catch {
+          // The agent scope is already gone.
+        }
+      }
+    }
+    toolDisposers.clear()
     relay.close()
     store.close()
   }, 'dsh-discuss: session clients')
