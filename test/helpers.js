@@ -26,9 +26,9 @@ export async function startStack(overrides = {}, options = {}) {
     ...overrides,
   }
   const discuss = createDiscussServer({ db: dbDiscuss, dataDir: dir, config })
-  await new Promise(resolve => discuss.server.listen(0, '127.0.0.1', resolve))
+  await new Promise(resolve => discuss.server.listen(options.port ?? 0, '127.0.0.1', resolve))
   const admin = createAdminServer({ db: dbAdmin, config })
-  await new Promise(resolve => admin.server.listen(0, '127.0.0.1', resolve))
+  await new Promise(resolve => admin.server.listen(options.adminPort ?? 0, '127.0.0.1', resolve))
 
   const base = `http://127.0.0.1:${discuss.server.address().port}`
   const adminBase = `http://127.0.0.1:${admin.server.address().port}`

@@ -192,6 +192,12 @@ export class SessionClient {
       }
       this.connected = false
       if (retired()) return
+      // The board may have lost our row (database restore or a redeploy on a
+      // fresh store). A cached username would then name a session the server
+      // no longer has, while writes silently mint a new one. Drop the cache so
+      // the next attempt registers again and adopts whatever name the server
+      // now answers with.
+      this.active = false
       await this.#delay(reconnectDelay(attempt))
       attempt += 1
     }

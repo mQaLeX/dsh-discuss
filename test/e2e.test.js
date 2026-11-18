@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { DiscussApi } from '../client/src/api.js'
+import { SessionClient } from '../client/src/core.js'
 import { createTopics, openStream, post, register, startStack, subscribe } from './helpers.js'
 
 /**
@@ -16,6 +18,15 @@ async function history(stack, topicId, ids) {
   )
   assert.equal(response.status, 200)
   return (await response.text()).trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
+}
+
+/** @param {() => boolean} check */
+async function waitFor(check, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs
+  while (!check()) {
+    if (Date.now() >= deadline) throw new Error('timed out waiting for condition')
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
 }
 
 test('a board restart preserves topics, subscriptions, messages and unacked mail', async () => {
@@ -63,6 +74,54 @@ test('a board restart preserves topics, subscriptions, messages and unacked mail
     assert.ok(delivery.messages.some(message => message.text === 'before restart'))
   } finally {
     stream?.close()
+    await stack?.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a client on a rebuilt board re-registers and adopts the new username', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-discuss-identity-'))
+  const ids = { installationId: 'identity-host', sessionId: 'identity-session' }
+  let stack
+  let client
+  try {
+    stack = await startStack({ ratePerMinute: 100 }, { dir })
+    const [topic] = await createTopics(stack.adminBase, ['identity topic'])
+    const port = stack.discuss.server.address().port
+    const api = new DiscussApi({ baseUrl: stack.base, timeoutMs: 2_000 })
+    client = new SessionClient({
+      ids,
+      api,
+      agent: { status: 'idle', inject: () => {}, inbox: { remove: () => false } },
+      spool: { append: () => {}, replace: () => {}, load: () => [], clear: () => {} },
+      makeMessage: (text, count) => ({ id: 'digest', text, count }),
+      config: { coalesceMs: 15_000, mergeThrottleMs: 30_000, digestMaxMessages: 20, digestMaxChars: 8_000 },
+      logger: { warn: () => {} },
+    })
+    client.start()
+    await waitFor(() => client.username !== undefined && client.connected)
+    await client.setSubscription(topic.id, true)
+    const before = client.username
+    const first = await client.post(topic.id, 'before the wipe')
+    const rows = await history(stack, topic.id, ids)
+    assert.equal(rows.find(row => row.id === first).user, before)
+
+    // The board is redeployed onto an empty database while the client keeps
+    // running: same address, same ids, no session row. The client must notice
+    // the lost row and adopt the username the rebuilt board mints for it.
+    await stack.close({ keepDir: true })
+    for (const suffix of ['', '-wal', '-shm']) rmSync(join(dir, `discuss.db${suffix}`), { force: true })
+    stack = await startStack({ ratePerMinute: 100 }, { dir, port })
+    const [fresh] = await createTopics(stack.adminBase, ['identity topic after the wipe'])
+
+    await waitFor(() => client.connected && client.username !== before)
+    await client.setSubscription(fresh.id, true)
+    const after = await client.post(fresh.id, 'after the wipe')
+    const freshRows = await history(stack, fresh.id, ids)
+    assert.equal(freshRows.find(row => row.id === after).user, client.username)
+    assert.notEqual(client.username, before)
+  } finally {
+    await client?.close().catch(() => {})
     await stack?.close()
     rmSync(dir, { recursive: true, force: true })
   }

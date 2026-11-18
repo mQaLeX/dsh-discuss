@@ -128,6 +128,15 @@ function mail(mailId, extra = {}) {
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 260))
 
+/** Wait for an async condition instead of sleeping a fixed reconnect delay. */
+async function waitFor(check, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs
+  while (!check()) {
+    if (Date.now() >= deadline) throw new Error('timed out waiting for condition')
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+}
+
 test('delivery is deduped by mail id and acked once', async () => {
   const { client, api } = makeClient()
   client.deliver([mail(1), mail(1)])
@@ -294,6 +303,33 @@ test('registration is shared by concurrent callers', async () => {
   const [first, second] = await Promise.all([client.ensureRegistered(), client.ensureRegistered()])
   assert.equal(first.username, second.username)
   assert.equal(registers, 1)
+  await client.close()
+})
+
+test('a reconnect re-registers and adopts the board\'s current username', async () => {
+  const { client, api } = makeClient()
+  let registers = 0
+  api.register = async () => {
+    registers += 1
+    // The board lost the old row (redeploy on a fresh database) and now knows
+    // this session under a different name.
+    const username = registers === 1 ? 'old-name' : 'new-name'
+    return { username, limits: { contentMax: 100, ratePerMinute: 5, fileMaxBytes: 1000 } }
+  }
+  let streams = 0
+  api.stream = async (_ids, options) => {
+    streams += 1
+    if (streams === 1) throw new Error('board went down')
+    await new Promise((resolve) => {
+      options.signal.addEventListener('abort', resolve, { once: true })
+    })
+  }
+  client.start()
+  await waitFor(() => registers === 2 && client.username === 'new-name')
+  assert.equal(registers, 2)
+  assert.equal(client.username, 'new-name')
+  const state = await client.ensureRegistered()
+  assert.equal(state.username, 'new-name')
   await client.close()
 })
 
