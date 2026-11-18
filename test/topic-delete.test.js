@@ -121,7 +121,7 @@ test('the maintenance cli deletes only after two y answers', async () => {
 
     const deleted = run(['delete', doomed.id], 'y\ny\n')
     assert.equal(deleted.status, 0, deleted.stderr)
-    assert.match(deleted.stdout, new RegExp(`deleted ${doomed.id}`))
+    assert.match(deleted.stdout, new RegExp(`deleted topic ${doomed.id} "cli delete"`))
     assert.equal(rows(doomed.id), 0)
     assert.equal(rows(kept.id), 1)
   } finally {

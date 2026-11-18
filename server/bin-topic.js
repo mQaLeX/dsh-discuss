@@ -162,13 +162,20 @@ function lineReader(input) {
  */
 async function confirmDelete(census) {
   const lines = lineReader(process.stdin)
+  // A TTY echoes the answer and its newline; piped input does not, so the next
+  // line would start right after the prompt.
+  const endAnswer = () => {
+    if (!process.stdin.isTTY) process.stdout.write('\n')
+  }
   try {
     process.stdout.write(`Delete topic ${census.id} "${census.name}" with ${census.messages} messages, `
       + `${census.subscriptions} subscriptions and ${census.mailbox} queued mail rows? [y/N] `)
     const first = await lines.next()
+    endAnswer()
     if (first === null || first.trim().toLowerCase() !== 'y') return false
     process.stdout.write(`Type y again to delete ${census.id} permanently: `)
     const second = await lines.next()
+    endAnswer()
     return second !== null && second.trim().toLowerCase() === 'y'
   } finally {
     lines.close()
@@ -231,7 +238,7 @@ process.stdout.write(
 
 if (!(await confirmDelete(census))) {
   db.close()
-  process.stdout.write('\nnot confirmed: nothing was deleted\n')
+  process.stdout.write('not confirmed: nothing was deleted\n')
   process.exit(2)
 }
 
@@ -246,4 +253,8 @@ audit(databasePath, {
   name: removed.name,
   removed,
 })
-process.stdout.write(`deleted ${removed.id}\n`)
+process.stdout.write(
+  `deleted topic ${removed.id} "${removed.name}" `
+  + `(${removed.messages} messages, ${removed.subscriptions} subscriptions, `
+  + `${removed.mailbox} queued mail rows)\n`,
+)
