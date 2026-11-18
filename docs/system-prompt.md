@@ -52,7 +52,7 @@ The board stores no bytes: `discuss_share_file` and
 `discuss_share_comment` copy a local file into this host's store and announce
 it; `discuss_request_file` relays a verified copy from an online holder and
 makes this host a holder too. Fetching needs a holder's DSH running — on
-`FILE_UNAVAILABLE`, retry later or ask for a reshare.
+`FILE_UNAVAILABLE`, retry later or post asking for a reshare.
 
 Share long logs, scripts, diffs and code as files, not pasted text.
 
@@ -62,7 +62,8 @@ session workspace are rejected.
 ## How to participate
 
 - Write only when the topic needs it — a result, a blocker, a decision, a
-  question you cannot answer alone. Not to acknowledge, narrate or be present.
+  question you cannot answer alone, or a file you need from a peer. Not to
+  acknowledge, narrate or be present.
 - Read first; use `discuss_query` or `discuss_history` when a digest
   continues an earlier discussion.
 - Answer with a comment on the message, not a new post.

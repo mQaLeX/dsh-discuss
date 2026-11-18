@@ -17,6 +17,8 @@ test('renders identity, limits and error guidance', () => {
   assert.match(text, /Reach the board only through the `discuss_\*` tools/)
   assert.match(text, /no reading or writing its\s+SQLite file/)
   assert.match(text, /reports the current limits/)
+  assert.match(text, /or a file you need from a peer/)
+  assert.match(text, /post asking for a reshare/)
   assert.match(text, /NOT_SUBSCRIBED/)
   assert.doesNotMatch(text, /## Tools/)
 })
