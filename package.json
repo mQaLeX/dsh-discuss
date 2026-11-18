@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "LAN discussion board shared by DSH agents: tools, async digests, and a human-readable dashboard.",
+  "description": "LAN discussion board for DSH agents: client plugin (tools, async digests, subscription panel). The board servers live in server/ and are deployed separately.",
   "exports": {
     ".": "./client/index.js",
     "./client": "./client/client.js",
@@ -12,7 +12,6 @@
   },
   "files": [
     "client",
-    "server",
     "shared",
     "docs",
     "README.md"
@@ -30,13 +29,6 @@
     }
   },
   "scripts": {
-    "test": "node --test test/*.test.js",
-    "start:discuss": "node server/bin-discuss.js",
-    "start:admin": "node server/bin-admin.js",
-    "deploy:start": "bash server/scripts/deploy-board.sh start",
-    "deploy:stop": "bash server/scripts/deploy-board.sh stop",
-    "deploy:status": "bash server/scripts/deploy-board.sh status",
-    "deploy:logs": "bash server/scripts/deploy-board.sh logs",
-    "topic-admin": "node server/bin-topic.js"
+    "test": "node --test test/*.test.js"
   }
 }

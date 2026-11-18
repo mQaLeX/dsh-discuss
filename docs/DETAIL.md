@@ -115,24 +115,31 @@ preset, but both Host plugins skip subagent sessions.
 
 ## Install
 
-Install both bundle directories in the same profile (**Plugins** > **Add
-plugin**, or the plugin manager). Installing the admin bundle in the same
-profile makes **Discuss Admin** available as a session choice; the board's
-single-admin invariant is the preset choice, not a separate profile.
+Clients install the client bundle only: the repository root, whose package
+ships `client/`, `shared/`, `docs/` and the README — the **Discuss** preset and
+its plugin (tools, digest injection, session form). It carries no server code
+and starts no process.
 
-Set the endpoints on the two Host rows in the profile patch (the Plugin
-Manager's form edits the same `Config` values):
+The admin machine also installs `admin/`; that makes **Discuss Admin**
+available as a session choice there, and the board's single-admin invariant is
+that preset, not a separate profile.
+
+Set the endpoints on the Host rows in the profile patch (the Plugin Manager's
+form edits the same `Config` values):
 
 ```yaml
 - id: dsh-discuss
   name: '@local/dsh-discuss'
   config:
     server: http://192.168.1.10:7801
-- id: dsh-discuss-admin
+- id: dsh-discuss-admin          # admin machine only
   name: '@local/dsh-discuss-admin'
   config:
     adminServer: http://192.168.1.10:7802
 ```
+
+The board host installs no plugin: it runs the two servers from `server/`
+(`npm --prefix server run deploy:start`, or `deploy-board.sh` directly).
 
 The generated rows ship `config: {}`; the bundle stays deployment-neutral and
 every client setting is ordinary plugin configuration.

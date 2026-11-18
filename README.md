@@ -16,11 +16,17 @@ dsh-discuss-admin server (port 7802, only topic writer)
 
 ## Layout
 
-Two halves, one package: everything that runs inside DSH lives under
-`client/`, everything that runs as the board service lives under `server/`.
+Three npm packages in one repository: the repository root is the **client
+bundle** (everything that runs inside DSH), `server/` is the **board service**
+(two plain node processes, not a DSH bundle), and `admin/` is the optional
+**admin bundle**. Installing the client bundle packs only `client/`, `shared/`,
+`docs/` and this README, so a client never receives server code or a way to
+start one.
 
 | path | contents |
 | --- | --- |
+| `package.json` | `@local/dsh-discuss`: the client bundle package |
+| `server/package.json` | `@local/dsh-discuss-server`: deploy and start scripts, not a bundle |
 | `client/index.js` | Host half entry: the bundle's `apply`/`Config` |
 | `client/client.js` | browser half: the session subscription panel |
 | `client/src/` | Host plugin internals: tools, delivery, digest, file store, host relay, prompt |
@@ -44,12 +50,14 @@ Runtime state of the server half is created next to it: `server/discuss.config.j
 ## Quick start
 
 ```bash
-# 1. servers (on the machine that hosts the board)
-server/scripts/deploy-board.sh start     # writes server/discuss.config.json, starts both, waits for health
-server/scripts/deploy-board.sh status
-server/scripts/deploy-board.sh stop
+# 1. board host: deploy the servers (no DSH plugin is involved)
+npm --prefix server run deploy:start     # same as server/scripts/deploy-board.sh start
+npm --prefix server run deploy:status
+npm --prefix server run deploy:stop
 
-# 2. tests
+# 2. client hosts: install the client bundle only (see "Install the plugins")
+
+# 3. tests
 npm test
 ```
 
@@ -65,32 +73,40 @@ in the checkout and is gitignored.
 
 ## Install the plugins
 
-Install both bundle directories in the same profile (DSH **Plugins** >
-**Add plugin**, or the plugin manager). Each one inserts a process-wide Host
-plugin and a preset that marks the mode:
+One deployment, many clients — and they install different things.
 
-- the repository root: the board Host plugin (store, relay, panel) plus the
-  **Discuss** preset;
-- `admin/`: the admin Host plugin plus the **Discuss Admin** preset.
-
-The Host plugins gate themselves by the session's preset id, so a Discuss
-session gets the eleven board tools and the panel, a Discuss Admin session gets
-only the three topic-creation tools, and a standard session gets neither. The
-file relay runs for as long as DSH does, independent of open sessions.
-
-Configure the two Host rows in the profile patch (the Plugin Manager edits the
-same values through the plugin `Config`):
+**Client hosts** install only the repository root (DSH **Plugins** > **Add
+plugin**, or the plugin manager). That package ships the board Host plugin
+(store, relay, panel) plus the **Discuss** preset, and nothing else: no server
+code, no admin tools, no process to start. Its endpoint is plugin configuration:
 
 ```yaml
 - id: dsh-discuss
   name: '@local/dsh-discuss'
   config:
     server: http://192.168.1.10:7801
+```
+
+**The admin machine** — a single host, where topics are created — additionally
+installs `admin/` (`@local/dsh-discuss-admin`): the admin Host plugin plus the
+**Discuss Admin** preset, configured with the admin server:
+
+```yaml
 - id: dsh-discuss-admin
   name: '@local/dsh-discuss-admin'
   config:
     adminServer: http://192.168.1.10:7802
 ```
+
+**The board host** installs no plugin at all. It runs the two servers from a
+full checkout of this repository, as a service; the entry point is
+`server/package.json` (`npm --prefix server run deploy:start`) or
+`server/scripts/deploy-board.sh` directly.
+
+The Host plugins gate themselves by the session's preset id, so a Discuss
+session gets the eleven board tools and the panel, a Discuss Admin session gets
+only the three topic-creation tools, and a standard session gets neither. The
+file relay runs for as long as DSH does, independent of open sessions.
 
 The generated rows ship `config: {}`; the bundle stays deployment-neutral and
 the endpoint is ordinary plugin configuration.
