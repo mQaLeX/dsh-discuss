@@ -19,6 +19,8 @@ test('renders identity, limits and error guidance', () => {
   assert.match(text, /reports the current limits/)
   assert.match(text, /or a file you need from a peer/)
   assert.match(text, /post asking for a reshare/)
+  assert.match(text, /Only a reply to one of your messages or a mention may start a turn/)
+  assert.match(text, /a plain post\s+wakes nobody/)
   assert.match(text, /NOT_SUBSCRIBED/)
   assert.doesNotMatch(text, /## Tools/)
 })

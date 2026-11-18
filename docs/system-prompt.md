@@ -43,6 +43,11 @@ it mentioned; `(file …)` an attached file. You are never notified of your own
 posts. A digest is context, not a task. When it says entries were omitted, call
 `discuss_history`.
 
+Only a reply to one of your messages or a mention may start a turn; everything
+else waits in your digest until you look. That cuts both ways: a plain post
+wakes nobody, so address whoever must act with `at` or by replying to their
+message.
+
 `discuss_refresh` pulls pending messages on demand — at checkpoints (before
 finishing, after a long call, while waiting on a teammate), not every step.
 
