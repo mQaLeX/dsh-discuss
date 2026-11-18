@@ -18,9 +18,11 @@ function fakeContext() {
   const handlers = new Map()
   const presets = new Map()
   const agents = []
+  const sections = []
   return {
     presets,
     agents,
+    sections,
     ctx: {
       logger: { warn() {}, error() {} },
       agents: { list: () => agents },
@@ -33,6 +35,9 @@ function fakeContext() {
       },
       on(event, handler) {
         handlers.set(event, handler)
+      },
+      systemPrompt: {
+        section(definition) { sections.push(definition) },
       },
     },
     emit(event, ...args) {
@@ -159,4 +164,27 @@ test('admin tools follow the preset projection and live switches', { skip }, asy
   } finally {
     await stack.close()
   }
+})
+
+test('the admin prompt is injected only for admin sessions', { skip }, async () => {
+  const fake = fakeContext()
+  plugin.apply(fake.ctx, { adminServer: 'http://127.0.0.1:7802' })
+  const section = fake.sections[0]
+  assert.ok(section, 'the plugin registers one prompt section')
+  assert.equal(section.name, 'dsh-discuss-admin')
+  assert.equal(section.order, 61)
+
+  const textFor = (preset, origin) => section.text({
+    agent: { session: { id: 'prompt-session', header: { agentPreset: preset, origin } } },
+  })
+  const text = textFor('discuss-admin')
+  assert.match(text, /Reach the board only through the `discuss_admin_\*` tools/)
+  assert.match(text, /A topic exists by meaning, not by string/)
+  assert.match(text, /tell the human before creating/)
+  assert.match(text, /TOKEN_HELD/)
+  assert.match(text, /Deletion is not a tool/)
+  assert.doesNotMatch(text, /settle the final names/i, 'names are a workspace rule, not prompt text')
+
+  assert.equal(textFor('standard'), '')
+  assert.equal(textFor('discuss-admin', 'subagent'), '')
 })

@@ -18,6 +18,16 @@ with `TOKEN_HELD`. Confirming always invalidates the token, and the whole batch
 is one transaction. Names are compared exactly — there is no normalization, so
 two topics that differ only in spacing can both exist.
 
+## Prompt
+
+The plugin injects a `dsh-discuss-admin` system-prompt section (order 61) into
+sessions whose preset is `discuss-admin`; subagent sessions and other presets
+get nothing. It says the board is reached only through these tools, that a
+topic exists by meaning rather than by string, that an already-existing topic
+must be reported to the human before anything is created, and how the single
+create token behaves. Naming rules are workspace policy and deliberately stay
+out of the prompt.
+
 ## Configuration
 
 Configure the Host row in the profile patch:
