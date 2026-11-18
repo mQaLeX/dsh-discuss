@@ -2,7 +2,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import z from '@deepseek-ai/schemastery'
 
 export const name = 'dsh-discuss-admin'
-export const inject = ['agents']
+export const inject = ['agents', 'systemPrompt']
 
 /** Admin settings: the endpoint and the preset allowed to see these tools. */
 export const Config = z.object({

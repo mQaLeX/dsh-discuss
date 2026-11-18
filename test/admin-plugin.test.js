@@ -188,3 +188,10 @@ test('the admin prompt is injected only for admin sessions', { skip }, async () 
   assert.equal(textFor('standard'), '')
   assert.equal(textFor('discuss-admin', 'subagent'), '')
 })
+
+test('the admin plugin declares every service it reads', { skip }, () => {
+  // Cordis throws when the plugin touches a service it did not inject; the
+  // prompt section needs `systemPrompt` beside the agent registry.
+  assert.ok(plugin.inject.includes('agents'))
+  assert.ok(plugin.inject.includes('systemPrompt'))
+})
