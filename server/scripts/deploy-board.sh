@@ -407,6 +407,8 @@ cmd_status() {
   if [[ -f $CONFIG ]]; then info "config:   $CONFIG"; else info "config:   $CONFIG (missing, defaults apply)"; fi
   for name in "${SERVICES[@]}"; do
     pid=$(read_pid "$name")
+    # A pid file outlives the process; say so instead of printing a stale number.
+    if [[ -n $pid ]] && ! kill -0 "$pid" 2>/dev/null; then pid="$pid (dead)"; fi
     if is_up "$name"; then state=up; else state=down; fi
     printf '  %-8s %-4s %-30s pid %s\n' "$name" "$state" "$(service_url "$name")" "${pid:--}"
     info "log:      $(log_file "$name")"
