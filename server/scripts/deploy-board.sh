@@ -269,12 +269,19 @@ service_url() {
 PROBE_URL=""
 PROBE_ANSWER=""
 is_up() {
-  local url code
+  local url out code reason
   url="$(service_url "$1")healthz"
-  code=$("$CURL" -s -o /dev/null -m 2 -w '%{http_code}' "$url" 2>/dev/null || true)
+  out=$("$CURL" -sS -o /dev/null -m 2 -w '\n%{http_code}' "$url" 2>&1 || true)
+  code=${out##*$'\n'}
+  reason=${out%$'\n'*}
   code=${code:-000}
+  [[ $code =~ ^[0-9]{3}$ ]] || { reason=$out; code=000; }
   PROBE_URL=$url
-  PROBE_ANSWER=$code
+  if [[ $code == 000 && -n $reason ]]; then
+    PROBE_ANSWER="000 ($(printf '%s' "$reason" | tr '\n' ' ' | sed 's/  */ /g' | cut -c1-160))"
+  else
+    PROBE_ANSWER=$code
+  fi
   [[ $code =~ ^[0-9]{3}$ && $code != 000 ]]
 }
 
