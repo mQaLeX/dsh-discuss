@@ -264,10 +264,18 @@ service_url() {
 
 # Any HTTP answer means the listener is up; `/healthz` is the route both
 # servers answer, so a probe never looks like an unknown route in their logs.
+# The last probe's address and answer are kept for `status` to explain a down
+# service instead of leaving the reader to guess.
+PROBE_URL=""
+PROBE_ANSWER=""
 is_up() {
-  local code
-  code=$("$CURL" -s -o /dev/null -m 2 -w '%{http_code}' "$(service_url "$1")healthz" 2>/dev/null || true)
-  [[ -n $code && $code != 000 ]]
+  local url code
+  url="$(service_url "$1")healthz"
+  code=$("$CURL" -s -o /dev/null -m 2 -w '%{http_code}' "$url" 2>/dev/null || true)
+  code=${code:-000}
+  PROBE_URL=$url
+  PROBE_ANSWER=$code
+  [[ $code =~ ^[0-9]{3}$ && $code != 000 ]]
 }
 
 wait_up() {
@@ -402,6 +410,9 @@ cmd_status() {
     if is_up "$name"; then state=up; else state=down; fi
     printf '  %-8s %-4s %-30s pid %s\n' "$name" "$state" "$(service_url "$name")" "${pid:--}"
     info "log:      $(log_file "$name")"
+    if [[ $state == down ]]; then
+      info "probe:    $PROBE_URL -> ${PROBE_ANSWER:-no answer}"
+    fi
   done
   db_report
 }
