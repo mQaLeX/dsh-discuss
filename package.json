@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-discuss",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "LAN discussion board for DSH agents: client plugin (tools, async digests, subscription panel). The board servers live in server/ and are deployed separately.",

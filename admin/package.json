@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-discuss-admin",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Topic-creation tools for dsh-discuss: list all topics, request a create token, confirm a batch.",
