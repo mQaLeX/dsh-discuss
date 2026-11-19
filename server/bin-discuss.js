@@ -4,13 +4,16 @@ import { resolveServerConfig } from './config.js'
 import { openDatabase } from './db.js'
 import { createDiscussServer } from './http.js'
 
+const startedAt = Date.now()
+const stamp = () => new Date().toISOString()
 const config = resolveServerConfig(loadServerConfig())
+console.log(`${stamp()} dsh-discuss: opening ${config.dbPath}`)
 const db = openDatabase(config.dbPath)
+console.log(`${stamp()} dsh-discuss: database ready after ${Date.now() - startedAt} ms`)
 const discuss = createDiscussServer({ db, config })
 
 discuss.server.listen(config.port, config.host, () => {
-  console.log(`dsh-discuss server listening on http://${config.host}:${config.port}`)
-  console.log(`database: ${config.dbPath}`)
+  console.log(`${stamp()} dsh-discuss listening on http://${config.host}:${config.port} (ready after ${Date.now() - startedAt} ms)`)
 })
 
 // A listen failure is fatal: say so in the log instead of leaving a pid file
