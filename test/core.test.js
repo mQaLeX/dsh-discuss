@@ -802,3 +802,17 @@ test('a failed injection does not spend the running budget', async () => {
   assert.equal(client.pending.length, 1)
   await client.close()
 })
+
+test('a failed spool append leaves the mail unacked', async () => {
+  const { client, api } = makeClient()
+  client.spool.append = () => {
+    throw new Error('disk full')
+  }
+  client.deliver([mail(1)])
+  await settle()
+  assert.equal(client.pending.length, 1, 'the message stays buffered in memory')
+  client.tick(true)
+  await settle()
+  assert.deepEqual(api.acked, [], 'nothing is acknowledged without a durable spool entry')
+  await client.close()
+})

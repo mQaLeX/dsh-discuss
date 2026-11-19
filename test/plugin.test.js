@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { closeSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { test } from 'node:test'
 import { createTopics, fakeHolder, post, register, request, startStack, subscribe } from './helpers.js'
 import { listHolders, pendingMail } from '../server/store.js'
@@ -65,19 +66,47 @@ function fakeContext() {
   const workspaceRegistry = { archivedSessionIds: [] }
   let section
   let route
+  /** Mimic the local backend: realpath the file, else the nearest existing ancestor. */
+  const canonical = (absolute) => {
+    const suffix = []
+    let current = absolute
+    for (;;) {
+      try {
+        return join(realpathSync(current), ...suffix)
+      } catch {
+        const parent = dirname(current)
+        if (parent === current) return absolute
+        suffix.unshift(basename(current))
+        current = parent
+      }
+    }
+  }
   const fs = {
+    sandboxMode: 'workspace-write',
     async resolve(path, options = {}) {
-      return resolve(options.cwd ?? process.cwd(), path)
+      const targetKey = canonical(resolve(options.cwd ?? process.cwd(), path))
+      return { targetKey, displayPath: targetKey }
+    },
+    contains(parent, child) {
+      const rel = relative(parent.targetKey, child.targetKey)
+      return rel === '' || (rel !== '..' && !rel.startsWith('..' + '/') && !isAbsolute(rel))
+    },
+    processPath(target) {
+      return target.targetKey
     },
     async stat(target) {
       try {
-        return { size: statSync(target).size }
+        return { size: statSync(target.targetKey).size }
       } catch {
         return undefined
       }
     },
+    async writeText(target, content) {
+      mkdirSync(dirname(target.targetKey), { recursive: true })
+      writeFileSync(target.targetKey, content)
+    },
     async readByteRange(target, range) {
-      const fd = openSync(target, 'r')
+      const fd = openSync(target.targetKey, 'r')
       try {
         const buffer = Buffer.alloc(range.length)
         const read = readSync(fd, buffer, 0, range.length, range.offset)
@@ -342,6 +371,32 @@ test('plugin integrates with a real server and a fake agent', { skip }, async ()
     fake.handlers.get('agent/inbox/discarded')({ agent, message: discardedDigest })
     await until(() => agent.messages.length > 0)
     assert.match(agent.messages[0].content[0].text, /discard me/)
+
+    // Exports resolve through the fs seam: a symlink inside the workspace that
+    // points elsewhere is canonicalised first and rejected.
+    const historyTool = agent.tools.find(tool => tool.name === 'discuss_history')
+    const outside = mkdtempSync(join(tmpdir(), 'dsh-discuss-outside-'))
+    symlinkSync(outside, join(stack.dir, 'escape-link'))
+    try {
+      await assert.rejects(
+        () => historyTool.execute(
+          { topicId: topic.id, savePath: 'escape-link/leak.jsonl' },
+          { agent, signal: AbortSignal.timeout(5000) },
+        ),
+        error => /PATH_NOT_ALLOWED|outside the session workspace/.test(String(error.message)),
+      )
+      assert.equal(existsSync(join(outside, 'leak.jsonl')), false, 'nothing was written through the link')
+
+      // The same export inside the workspace still works, creating parents.
+      const exported = await historyTool.execute(
+        { topicId: topic.id, savePath: 'history/out.jsonl' },
+        { agent, signal: AbortSignal.timeout(5000) },
+      )
+      assert.match(exported.text, /Exported \d+ messages/)
+      assert.ok(existsSync(join(stack.dir, 'history', 'out.jsonl')))
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
 
     // Disposal unregisters the mailbox.
     fake.handlers.get('agent/disposed')({ agent })

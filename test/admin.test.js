@@ -152,3 +152,15 @@ test('an unknown route answers 404 without logging a server failure', async () =
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('a malformed JSON body answers 400, not 500', async () => {
+  const response = await fetch(`${stack.adminBase}/v1/admin/topics/request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{',
+  })
+  assert.equal(response.status, 400)
+  const body = await response.json()
+  assert.equal(body.ok, false)
+  assert.equal(body.error.code, 'CONTENT_INVALID')
+})

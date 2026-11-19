@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -45,5 +45,16 @@ test('replace rewrites the spool to exactly the given messages', () => {
     spool.append([{ mailId: 1 }, { mailId: 2 }])
     spool.replace([{ mailId: 2 }, { mailId: 3 }])
     assert.deepEqual(spool.load(), [{ mailId: 2 }, { mailId: 3 }])
+  })
+})
+
+test('replace rewrites atomically and leaves no temp file', () => {
+  withTemp((dir) => {
+    const path = join(dir, 'session.jsonl')
+    const spool = new Spool(path)
+    spool.append([{ mailId: 1 }, { mailId: 2 }])
+    spool.replace([{ mailId: 3 }])
+    assert.deepEqual(spool.load(), [{ mailId: 3 }])
+    assert.deepEqual(readdirSync(dir).filter(name => name.includes('.tmp')), [])
   })
 })

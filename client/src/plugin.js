@@ -1,5 +1,6 @@
-import { copyFileSync, mkdirSync, renameSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { closeSync, createReadStream, createWriteStream, fsyncSync, mkdirSync, openSync, renameSync, statSync, unlinkSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { pipeline } from 'node:stream/promises'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import z from '@deepseek-ai/schemastery'
@@ -163,34 +164,85 @@ function sessionArchived(ctx, agent) {
 }
 
 /**
- * Resolve a model-supplied save path inside the session workspace. The fs seam
- * has no binary write, so writes re-check containment here and then use the
- * host filesystem; reads always go through `ctx.fs`.
+ * Resolve a model-supplied save path through the host's filesystem service.
+ * `resolve` canonicalises (symlinks followed) and `contains` decides
+ * containment on the canonical targets — the same fence the DSH sandbox applies
+ * to its own writes, with the same accepted residual TOCTOU (an ancestor
+ * directory swapped between the check and the write).
+ * @param {any} fs
  * @param {any} agent
  * @param {string} savePath
- * @returns {string}
+ * @param {AbortSignal | undefined} signal
+ * @returns {Promise<any>} the resolved target
  */
-function resolveWriteTarget(agent, savePath) {
+async function resolveWriteTarget(fs, agent, savePath, signal) {
   const cwd = resolve(agent.session.header.cwd ?? process.cwd())
-  const absolute = isAbsolute(savePath) ? resolve(savePath) : resolve(cwd, savePath)
-  const rel = relative(cwd, absolute)
-  if (rel.length === 0 || rel.startsWith('..') || isAbsolute(rel)) {
+  const workspace = await fs.resolve(cwd, { cwd, signal })
+  const target = await fs.resolve(savePath, { cwd, signal })
+  if (!fs.contains(workspace, target)) {
     throw new DiscussError('PATH_NOT_ALLOWED', `path is outside the session workspace: ${savePath}`, {
       details: { workspace: cwd },
     })
   }
-  return absolute
+  return target
 }
 
 /**
- * @param {string} path
- * @param {string | Uint8Array} data
+ * Publish a temp file at the target's canonical path. The path comes from the
+ * filesystem service, so a symlink swapped in at the requested name cannot
+ * redirect the write; `rename` makes the publication atomic.
+ * @param {any} fs
+ * @param {any} target
+ * @param {string} temporary
+ * @returns {string} the published path
  */
-function writeAtomic(path, data) {
+function publishTemp(fs, target, temporary) {
+  const path = fs.processPath(target)
+  try {
+    renameSync(temporary, path)
+  } catch (error) {
+    try {
+      unlinkSync(temporary)
+    } catch {
+      // The temp file is already gone.
+    }
+    throw error
+  }
+  return path
+}
+
+/**
+ * Copy one local file to the target with fsync before the rename.
+ * @param {any} fs
+ * @param {any} target
+ * @param {string} sourcePath
+ * @returns {Promise<string>} the published path
+ */
+async function copyAtomic(fs, target, sourcePath) {
+  const path = fs.processPath(target)
   mkdirSync(dirname(path), { recursive: true })
   const temporary = `${path}.${process.pid}.${Date.now()}.tmp`
-  writeFileSync(temporary, data)
-  renameSync(temporary, path)
+  await pipeline(createReadStream(sourcePath), createWriteStream(temporary, { mode: 0o600 }))
+  const fd = openSync(temporary, 'a')
+  try {
+    fsyncSync(fd)
+  } finally {
+    closeSync(fd)
+  }
+  return publishTemp(fs, target, temporary)
+}
+
+/**
+ * Binary destinations cannot use `ctx.fs.writeText`; honour a read-only
+ * filesystem sandbox explicitly before writing the canonical path.
+ * @param {any} fs
+ */
+function refuseReadOnly(fs) {
+  if (fs.sandboxMode === 'read-only') {
+    throw new DiscussError('PATH_NOT_ALLOWED', 'the filesystem sandbox is read-only; file exports are disabled', {
+      details: { sandboxMode: fs.sandboxMode },
+    })
+  }
 }
 
 /**
@@ -471,10 +523,10 @@ export function apply(ctx, config = {}) {
             : store.pathForMessage(args.topicId, args.messageId)
           if (localSha !== undefined && localPath !== undefined) {
             const size = store.sizeOf(localSha) ?? statSync(localPath).size
-            const target = resolveWriteTarget(agent, args.savePath)
-            mkdirSync(dirname(target), { recursive: true })
-            copyFileSync(localPath, target)
-            return `Saved ${size} bytes to ${target} (sha256 ${localSha}); served from this host's local store.`
+            const target = await resolveWriteTarget(ctx.fs, agent, args.savePath, exec.signal)
+            refuseReadOnly(ctx.fs)
+            const saved = await copyAtomic(ctx.fs, target, localPath)
+            return `Saved ${size} bytes to ${saved} (sha256 ${localSha}); served from this host's local store.`
           }
 
           const temporary = join(
@@ -492,10 +544,10 @@ export function apply(ctx, config = {}) {
           } catch (error) {
             note = ` (holder registration failed: ${error instanceof Error ? error.message : String(error)})`
           }
-          const target = resolveWriteTarget(agent, args.savePath)
-          mkdirSync(dirname(target), { recursive: true })
-          copyFileSync(store.pathFor(stored.sha256), target)
-          return `Saved ${stored.size} bytes to ${target} (sha256 ${stored.sha256}); this host is now a holder.${note}`
+          const target = await resolveWriteTarget(ctx.fs, agent, args.savePath, exec.signal)
+          refuseReadOnly(ctx.fs)
+          const saved = await copyAtomic(ctx.fs, target, store.pathFor(stored.sha256))
+          return `Saved ${stored.size} bytes to ${saved} (sha256 ${stored.sha256}); this host is now a holder.${note}`
         }),
 
       tool('discuss_history',
@@ -507,9 +559,9 @@ export function apply(ctx, config = {}) {
         async (args, exec) => {
           const { client, agent } = contextOf(exec)
           const text = await client.api.ndjson(client.ids, `/v1/history/${encodeURIComponent(args.topicId)}`)
-          const target = resolveWriteTarget(agent, args.savePath)
-          writeAtomic(target, text)
-          return `Exported ${countLines(text)} messages to ${target}.`
+          const target = await resolveWriteTarget(ctx.fs, agent, args.savePath, exec.signal)
+          await ctx.fs.writeText(target, text, undefined, exec.signal)
+          return `Exported ${countLines(text)} messages to ${target.displayPath}.`
         }),
 
       tool('discuss_query',
@@ -525,9 +577,9 @@ export function apply(ctx, config = {}) {
             client.ids,
             `/v1/query/${encodeURIComponent(args.topicId)}/${args.messageId}`,
           )
-          const target = resolveWriteTarget(agent, args.savePath)
-          writeAtomic(target, text)
-          return `Exported ${countLines(text)} messages to ${target}.`
+          const target = await resolveWriteTarget(ctx.fs, agent, args.savePath, exec.signal)
+          await ctx.fs.writeText(target, text, undefined, exec.signal)
+          return `Exported ${countLines(text)} messages to ${target.displayPath}.`
         }),
     ]
     const disposers = []

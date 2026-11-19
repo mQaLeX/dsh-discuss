@@ -455,7 +455,11 @@ export function deleteTopic(db, topicId) {
  * @returns {Iterable<any>}
  */
 export function listHistory(db, topicId) {
-  return prepare(db, 'SELECT * FROM messages WHERE topic_id = ? ORDER BY id').iterate(topicId)
+  // A fresh statement per export: the shared cache would hand two overlapping
+  // exports the same cursor, and the second iterate() resets the first (its
+  // next() then throws ERR_INVALID_STATE, truncating a response whose headers
+  // are already sent).
+  return db.prepare('SELECT * FROM messages WHERE topic_id = ? ORDER BY id').iterate(topicId)
 }
 
 /**

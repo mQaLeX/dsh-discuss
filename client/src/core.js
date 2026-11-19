@@ -233,14 +233,18 @@ export class SessionClient {
     if (this.firstPendingAt === null) this.firstPendingAt = this.now()
     const before = this.pending.length
     this.#trimPending()
+    let durable = true
     if (this.pending.length === before) {
       try {
         this.spool.append([message])
       } catch (error) {
+        // Without the spool the ack would promise delivery we cannot keep
+        // across a crash; leave the mail unacked so the server resends it.
+        durable = false
         this.logger.warn(`dsh-discuss: spool append failed: ${String(error)}`)
       }
     }
-    this.#queueAck(message.mailId)
+    if (durable) this.#queueAck(message.mailId)
     this.#notify()
     this.#schedule()
   }

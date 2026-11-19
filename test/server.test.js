@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { after, before, test } from 'node:test'
 import { createTopics, fakeHolder, openStream, post, register, request, startStack, subscribe } from './helpers.js'
-import { dashboardData, listHolders, pendingMail } from '../server/store.js'
+import { dashboardData, listHistory, listHolders, pendingMail } from '../server/store.js'
 
 /** @type {Awaited<ReturnType<typeof startStack>>} */
 let stack
@@ -783,4 +783,54 @@ test('a post cannot carry a parent id', async () => {
   } finally {
     await stack.close()
   }
+})
+
+test('two overlapping history exports do not reset each other', async () => {
+  const [topic] = await createTopics(stack.adminBase, ['export overlap'])
+  const ids = { installationId: 'export-host', sessionId: 'export-a' }
+  await register(stack.base, ids.installationId, ids.sessionId)
+  await subscribe(stack.base, ids, topic.id)
+  for (let index = 0; index < 3; index += 1) {
+    const response = await post(stack.base, ids, topic.id, `overlap ${index}`)
+    assert.equal(response.status, 200, JSON.stringify(response.body))
+  }
+
+  // Two exports walk two cursors at once. A shared cached statement would hand
+  // both the same cursor: the second iterate() resets the first, whose next()
+  // then throws ERR_INVALID_STATE and truncates a response already in flight.
+  const first = listHistory(stack.db, topic.id)
+  const second = listHistory(stack.db, topic.id)
+  const rowsA = []
+  const rowsB = []
+  for (;;) {
+    const a = first.next()
+    const b = second.next()
+    if (!a.done) rowsA.push(a.value)
+    if (!b.done) rowsB.push(b.value)
+    if (a.done && b.done) break
+  }
+  assert.equal(rowsA.length, 3)
+  assert.equal(rowsB.length, 3)
+})
+
+test('holders/remove requires a subscription', async () => {
+  const stranger = { installationId: 'stranger-host', sessionId: 'stranger-a' }
+  const response = await request(`${stack.base}/v1/holders/remove`, {
+    ...stranger,
+    topicId,
+    messageId: 1,
+  })
+  assert.equal(response.status, 403)
+  assert.equal(response.body.error.code, 'NOT_SUBSCRIBED')
+})
+
+test('a malformed JSON body answers 400, not 500', async () => {
+  const response = await fetch(`${stack.base}/v1/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{',
+  })
+  assert.equal(response.status, 400)
+  const body = await response.json()
+  assert.equal(body.error.code, 'CONTENT_INVALID')
 })

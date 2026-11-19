@@ -21,7 +21,10 @@ export function formatLine(message) {
   const at = typeof message.at === 'string' && message.at.length > 0 ? ` (at @${message.at})` : ''
   const toYou = message.toYou === true ? ' (to you)' : ''
   const mentionYou = message.mentionYou === true ? ' (mention you)' : ''
-  return `- [${message.topicId}/${message.messageId}] @${message.author}${attachment}${marker}${at}${toYou}${mentionYou}: ${message.text}`
+  // One message, one line: a newline in the body would otherwise let a peer
+  // forge a second digest line with its own author and markers.
+  const text = String(message.text ?? '').replaceAll(/[\r\n]+/g, ' ')
+  return `- [${message.topicId}/${message.messageId}] @${message.author}${attachment}${marker}${at}${toYou}${mentionYou}: ${text}`
 }
 
 /**

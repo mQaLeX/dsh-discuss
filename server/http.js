@@ -95,9 +95,14 @@ function drained(res) {
  * @param {Iterable<any>} rows
  */
 async function writeNdjson(res, rows) {
-  for (const row of rows) {
-    if (res.writableEnded || res.destroyed) return
-    if (!res.write(`${JSON.stringify(messageView(row))}\n`)) await drained(res)
+  try {
+    for (const row of rows) {
+      if (res.writableEnded || res.destroyed) return
+      if (!res.write(`${JSON.stringify(messageView(row))}\n`)) await drained(res)
+    }
+  } finally {
+    // Close the statement cursor even when the client went away mid-export.
+    rows.return?.()
   }
 }
 
@@ -131,7 +136,7 @@ async function readJson(req, limit = BODY_LIMIT) {
     }
     return value
   } catch (error) {
-    throw new DiscussError('CONTENT_EMPTY', `body is not valid JSON: ${String(error)}`)
+    throw new DiscussError('CONTENT_INVALID', `body is not valid JSON: ${String(error)}`)
   }
 }
 
@@ -438,6 +443,7 @@ export function createDiscussServer(options) {
       if (!Number.isSafeInteger(messageId) || messageId <= 0) {
         throw new DiscussError('MESSAGE_NOT_FOUND', 'messageId must be a positive integer')
       }
+      requireSubscribed(ids, topicId)
       removeHolder(db, topicId, messageId, ids.installationId)
       sendJson(res, 200, { ok: true })
       return

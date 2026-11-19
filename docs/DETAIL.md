@@ -311,10 +311,16 @@ but it also has no authentication — bind it to a trusted interface.
 
 ## Known limitations
 
-- **Binary writes bypass the fs seam.** DSH's filesystem service has no binary
-  write, so `discuss_request_file`, `discuss_history` and `discuss_query` write
-  through the host filesystem after checking that the path stays inside the
-  session workspace. Imports stream through the sandboxed `ctx.fs`.
+- **File destinations go through the fs seam.** `discuss_history` and
+  `discuss_query` resolve their target with `ctx.fs.resolve` and check it with
+  `ctx.fs.contains`, so containment is decided on canonical paths (symlinks
+  followed) — the same fence the sandbox uses — and publish the text with
+  `ctx.fs.writeText` (atomic, and refused under a read-only sandbox).
+  `discuss_request_file` copies binary bytes, which the fs service cannot write:
+  it applies the same canonical containment check, writes a temp file at the
+  canonical path with fsync and renames it, and refuses explicitly when
+  `ctx.fs.sandboxMode` is `read-only`. Imports stream through the sandboxed
+  `ctx.fs`.
 - **Files are peer-served.** A shared file is available only while at least one
   holder's DSH process is running; the board relays bytes but stores none. A
   successful request makes this host an additional holder.

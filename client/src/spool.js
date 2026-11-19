@@ -1,4 +1,4 @@
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, truncateSync, writeSync, fsyncSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, truncateSync, writeSync, fsyncSync } from 'node:fs'
 import { dirname } from 'node:path'
 
 /**
@@ -34,13 +34,17 @@ export class Spool {
    */
   replace(messages) {
     mkdirSync(dirname(this.path), { recursive: true })
-    const fd = openSync(this.path, 'w', 0o600)
+    // Write a sibling temp file and rename: truncating in place would lose the
+    // whole spool if the process died mid-write.
+    const temporary = `${this.path}.${process.pid}.tmp`
+    const fd = openSync(temporary, 'w', 0o600)
     try {
       for (const message of messages) writeSync(fd, `${JSON.stringify(message)}\n`)
       fsyncSync(fd)
     } finally {
       closeSync(fd)
     }
+    renameSync(temporary, this.path)
   }
 
   /** @returns {Array<any>} messages that were acknowledged but not injected */

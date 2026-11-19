@@ -32,7 +32,11 @@ async function readJson(req) {
     chunks.push(chunk)
   }
   if (total === 0) return {}
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  } catch {
+    throw new DiscussError('CONTENT_INVALID', 'request body is not valid JSON')
+  }
 }
 
 /**

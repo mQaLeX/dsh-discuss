@@ -47,10 +47,12 @@ DATA_DIR="$DEPLOY_DIR/server/data"
 RUN_DIR="$DEPLOY_DIR/server/run"
 LOG_DIR="$DEPLOY_DIR/server/logs"
 
-# Only used when this script has to create the config file.
-GEN_HOST=127.0.0.1
+# Only used when this script has to create the config file. Both servers bind
+# every interface: a LAN board is unreachable from its clients otherwise, and
+# the shipped example config carries the same defaults.
+GEN_HOST=0.0.0.0
 GEN_PORT=7801
-GEN_ADMIN_HOST=127.0.0.1
+GEN_ADMIN_HOST=0.0.0.0
 GEN_ADMIN_PORT=7802
 
 WAIT_SECONDS=${WAIT_SECONDS:-20}
@@ -60,6 +62,9 @@ COMMAND=""
 LOGS_TARGET=""
 FOLLOW=0
 ENABLE_UNIT=0
+# Whether --host/--port/--admin-* were given: they only apply while creating
+# the config, so warn only when the caller actually asked for them.
+GEN_EXPLICIT=0
 
 SERVICES=(discuss admin)
 declare -A SCRIPT=(
@@ -113,10 +118,10 @@ while (($# > 0)); do
         --data-dir) DATA_DIR=$2 ;;
         --run-dir) RUN_DIR=$2 ;;
         --log-dir) LOG_DIR=$2 ;;
-        --host) GEN_HOST=$2 ;;
-        --port) GEN_PORT=$2 ;;
-        --admin-host) GEN_ADMIN_HOST=$2 ;;
-        --admin-port) GEN_ADMIN_PORT=$2 ;;
+        --host) GEN_HOST=$2; GEN_EXPLICIT=1 ;;
+        --port) GEN_PORT=$2; GEN_EXPLICIT=1 ;;
+        --admin-host) GEN_ADMIN_HOST=$2; GEN_EXPLICIT=1 ;;
+        --admin-port) GEN_ADMIN_PORT=$2; GEN_EXPLICIT=1 ;;
         --wait) WAIT_SECONDS=$2 ;;
       esac
       shift 2
@@ -213,7 +218,7 @@ generate_config() {
 ensure_config() {
   if [[ ! -f $CONFIG ]]; then
     generate_config
-  elif [[ $GEN_PORT != 7801 || $GEN_ADMIN_PORT != 7802 || $GEN_HOST != 127.0.0.1 || $GEN_ADMIN_HOST != 127.0.0.1 ]]; then
+  elif ((GEN_EXPLICIT)); then
     warn "--host/--port only apply when the config is created; editing $CONFIG is ignored"
   fi
   load_config
@@ -234,10 +239,24 @@ read_pid() {
   [[ -f $file ]] && cat -- "$file" 2>/dev/null || true
 }
 
+# A pid is ours only when its command line names this deployment's script and
+# config: a recycled pid or a dead pid file must never be signalled.
+pid_is_ours() {
+  local name=$1 pid=$2
+  [[ -n $pid && -r /proc/$pid/cmdline ]] || return 1
+  tr '\0' ' ' <"/proc/$pid/cmdline" | grep -Fq -- "server/bin-$name.js --config=$CONFIG"
+}
+
 # Last resort: recover the pid from the command line, so `stop` still works
 # after a lost pid file. Only this deployment's exact config matches.
 find_pid() {
-  pgrep -f -- "server/bin-$1.js --config=$CONFIG" 2>/dev/null | head -n1 || true
+  local candidate
+  for candidate in $(pgrep -f -- "server/bin-$1.js" 2>/dev/null); do
+    if pid_is_ours "$1" "$candidate"; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
 }
 
 # ----------------------------------------------------------------- health ----
@@ -300,7 +319,7 @@ assert_port_free() {
   local port
   port=$(service_port "$1")
   is_up "$1" && return 0
-  if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
+  if (exec 3<>"/dev/tcp/$(probe_host "$1")/$port") 2>/dev/null; then
     die "port $port is already in use by another process; stop it or change $CONFIG"
   fi
 }
@@ -360,23 +379,29 @@ start_service() {
 stop_service() {
   local name=$1 pid deadline
   pid=$(read_pid "$name")
-  if [[ -z $pid ]] || ! kill -0 "$pid" 2>/dev/null; then
+  if ! pid_is_ours "$name" "$pid"; then
     pid=$(find_pid "$name")
   fi
-  if [[ -z $pid ]]; then
+  if [[ -z $pid ]] || ! pid_is_ours "$name" "$pid"; then
     rm -f -- "$(pid_file "$name")"
     info "$name not running"
     return 0
   fi
 
-  kill -TERM "$pid" 2>/dev/null || true
+  if ! kill -TERM "$pid" 2>/dev/null; then
+    die "$name (pid $pid) belongs to another user; run this script as that user or as root"
+  fi
   deadline=$((SECONDS + STOP_SECONDS))
-  while kill -0 "$pid" 2>/dev/null && ((SECONDS < deadline)); do
+  while [[ -d /proc/$pid ]] && ((SECONDS < deadline)); do
     sleep 0.2
   done
-  if kill -0 "$pid" 2>/dev/null; then
+  if [[ -d /proc/$pid ]]; then
     warn "$name ignored SIGTERM for ${STOP_SECONDS}s; sending SIGKILL"
     kill -KILL "$pid" 2>/dev/null || true
+    sleep 0.2
+  fi
+  if [[ -d /proc/$pid ]]; then
+    die "$name (pid $pid) is still alive; stop it manually"
   fi
   rm -f -- "$(pid_file "$name")"
   info "$name stopped (pid $pid)"
