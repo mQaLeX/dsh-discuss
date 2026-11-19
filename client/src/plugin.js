@@ -42,6 +42,12 @@ export const Config = z.object({
   mergeThrottleMs: z.natural().default(DEFAULTS.mergeThrottleMs).description(
     'Minimum interval between digest rewrites while one is pending.',
   ),
+  runningInjectCooldownMs: z.natural().default(DEFAULTS.runningInjectCooldownMs).description(
+    'Minimum gap between two injections into a turn that is already running.',
+  ),
+  runningInjectBudgetPerHour: z.natural().default(DEFAULTS.runningInjectBudgetPerHour).description(
+    'Injections into a running turn allowed per rolling hour; waking an idle session is not budgeted.',
+  ),
   digestMaxMessages: z.natural().default(DEFAULTS.digestMaxMessages).description(
     'Maximum messages rendered in one digest.',
   ),
@@ -198,6 +204,8 @@ export function apply(ctx, config = {}) {
     clientDataDir: '',
     coalesceMs: DEFAULTS.coalesceMs,
     mergeThrottleMs: DEFAULTS.mergeThrottleMs,
+    runningInjectCooldownMs: DEFAULTS.runningInjectCooldownMs,
+    runningInjectBudgetPerHour: DEFAULTS.runningInjectBudgetPerHour,
     digestMaxMessages: DEFAULTS.digestMaxMessages,
     digestMaxChars: DEFAULTS.digestMaxChars,
     bufferMaxMessages: DEFAULTS.digestMaxMessages,

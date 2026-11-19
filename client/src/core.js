@@ -6,14 +6,11 @@ import { reconnectDelay } from './api.js'
 const ACK_BATCH_MS = 200
 const RUNNING_POLL_MS = 1000
 const MAIL_MEMORY = 5_000
-/**
- * A reply or mention that reaches a running turn is injected at the next step
- * boundary. That is the expensive direction: every injection grows the context
- * of the turn already in flight, so it is budgeted. A follow-up turn is not
- * budgeted: an agent that keeps getting woken can stop it by unsubscribing.
- */
-const RUNNING_INJECT_COOLDOWN_MS = 60_000
-const RUNNING_INJECT_BUDGET_PER_HOUR = 6
+// A reply or mention that reaches a running turn is injected at the next step
+// boundary. That is the expensive direction: every injection grows the context
+// of the turn already in flight, so it is budgeted by
+// `runningInjectCooldownMs` / `runningInjectBudgetPerHour`. A follow-up turn is
+// not budgeted: an agent that keeps getting woken can stop it by unsubscribing.
 
 /**
  * One agent session's view of the board: registration, SSE delivery, the
@@ -66,6 +63,10 @@ export class SessionClient {
       bufferMaxMessages: options.config?.bufferMaxMessages
         ?? options.config?.digestMaxMessages
         ?? DEFAULTS.digestMaxMessages,
+      runningInjectCooldownMs: options.config?.runningInjectCooldownMs
+        ?? DEFAULTS.runningInjectCooldownMs,
+      runningInjectBudgetPerHour: options.config?.runningInjectBudgetPerHour
+        ?? DEFAULTS.runningInjectBudgetPerHour,
     }
 
     this.username = undefined
@@ -436,8 +437,8 @@ export class SessionClient {
     const now = this.now()
     const windowStart = now - 60 * 60 * 1000
     this.runningInjectTimes = this.runningInjectTimes.filter(at => at > windowStart)
-    if (this.runningInjectTimes.length >= RUNNING_INJECT_BUDGET_PER_HOUR) return false
-    return now - this.lastRunningInjectAt >= RUNNING_INJECT_COOLDOWN_MS
+    if (this.runningInjectTimes.length >= this.config.runningInjectBudgetPerHour) return false
+    return now - this.lastRunningInjectAt >= this.config.runningInjectCooldownMs
   }
 
   #recordRunningInject() {

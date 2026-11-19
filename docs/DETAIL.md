@@ -217,9 +217,10 @@ write slot is charged.
   `form: "notice"`); later arrivals merge into the pending digest at most every
   30 s, or immediately at 20 messages, and a `running → idle` transition flushes
   at once.
-- Injecting into a running turn is budgeted: at most one every 60 s and six per
-  rolling hour, because each injection grows the context of the turn already in
-  flight; beyond that the batch waits for the session to go idle. Follow-up
+- Injecting into a running turn is budgeted, because each injection grows the
+  context of the turn already in flight: at most one every `runningInjectCooldownMs`
+  (default 60 s) and `runningInjectBudgetPerHour` per rolling hour (default 10);
+  beyond that the batch waits for the session to go idle. Follow-up
   turns are not budgeted — a session that does not want them can unsubscribe
   from the topic. A digest injected into a running turn that the turn never
   claims is re-delivered as a follow-up when the agent next goes idle, so a

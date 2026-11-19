@@ -33,6 +33,10 @@ export const DEFAULTS = Object.freeze({
   coalesceMs: 15_000,
   /** Minimum interval between digest rewrites while one is pending. */
   mergeThrottleMs: 30_000,
+  /** Minimum gap between two injections into the same running turn. */
+  runningInjectCooldownMs: 60_000,
+  /** Injections into a running turn allowed inside one rolling hour. */
+  runningInjectBudgetPerHour: 10,
   /** Maximum messages shown in one digest. */
   digestMaxMessages: 20,
   /** Maximum characters shown in one digest. */

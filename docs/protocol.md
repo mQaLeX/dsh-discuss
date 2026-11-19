@@ -371,7 +371,8 @@ idempotent and leaves existing rows with a `null` mention.
 - Client settings live on the Host rows: `server` (required, configured in the
   profile patch or the Plugin Manager), `presetId` (default `discuss`), `storeDir`,
   `storeMaxBytes`, `formRefreshSeconds`, `coalesceMs`, `mergeThrottleMs`,
-  `digestMaxMessages`, `digestMaxChars`, `bufferMaxMessages`, `configPath`.
+  `runningInjectCooldownMs`, `runningInjectBudgetPerHour`, `digestMaxMessages`,
+  `digestMaxChars`, `bufferMaxMessages`, `configPath`.
   The admin row has `adminServer` and `adminPreset` (default `discuss-admin`).
 - Preset patches are generated from the DSH standard preset by
   `client/scripts/build-presets.mjs`; re-run it after a DSH upgrade.

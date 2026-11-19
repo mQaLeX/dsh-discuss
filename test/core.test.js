@@ -622,10 +622,19 @@ test('every reply starts a turn: waking is not budgeted', async () => {
 })
 
 test('injecting into a running turn is budgeted', async () => {
-  const { client, agent, advance } = makeClient()
+  const { client, agent, advance } = makeClient({
+    config: {
+      coalesceMs: 15_000,
+      mergeThrottleMs: 30_000,
+      digestMaxMessages: 20,
+      digestMaxChars: 8000,
+      runningInjectCooldownMs: 60_000,
+      runningInjectBudgetPerHour: 3,
+    },
+  })
   agent.status = 'running'
   let injected = 0
-  for (let i = 1; i <= 7; i += 1) {
+  for (let i = 1; i <= 4; i += 1) {
     const before = agent.messages.length
     client.deliver([mail(i, { toYou: true })])
     client.tick()
@@ -635,14 +644,42 @@ test('injecting into a running turn is budgeted', async () => {
     }
     advance(61_000)
   }
-  assert.equal(injected, 6, 'six injections inside the rolling hour')
+  assert.equal(injected, 3, 'three injections inside the rolling hour')
   assert.equal(agent.woken.length, 0, 'a running turn is never woken')
-  assert.equal(client.pending.length, 1, 'the seventh batch waits instead of growing the turn')
+  assert.equal(client.pending.length, 1, 'the fourth batch waits instead of growing the turn')
   // Once the turn ends, the leftover wakes the now-idle session, un-budgeted.
   agent.status = 'idle'
   client.onStatus('idle')
   assert.equal(agent.woken.length, 1)
-  assert.match(agent.woken[0].text, /message 7/)
+  assert.match(agent.woken[0].text, /message 4/)
+  await client.close()
+})
+
+test('the running-inject cooldown is configurable', async () => {
+  const { client, agent, advance } = makeClient({
+    config: {
+      coalesceMs: 15_000,
+      mergeThrottleMs: 30_000,
+      digestMaxMessages: 20,
+      digestMaxChars: 8000,
+      runningInjectCooldownMs: 10_000,
+      runningInjectBudgetPerHour: 10,
+    },
+  })
+  agent.status = 'running'
+  client.deliver([mail(1, { toYou: true })])
+  client.tick()
+  assert.equal(agent.messages.length, 1)
+  client.onClaimed(agent.messages[0].id)
+
+  advance(5_000)
+  client.deliver([mail(2, { toYou: true })])
+  client.tick()
+  assert.equal(agent.messages.length, 1, 'inside the cooldown nothing is injected')
+
+  advance(6_000)
+  client.tick()
+  assert.equal(agent.messages.length, 2, 'after the cooldown the batch lands')
   await client.close()
 })
 
