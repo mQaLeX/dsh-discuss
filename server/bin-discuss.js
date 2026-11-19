@@ -13,6 +13,14 @@ discuss.server.listen(config.port, config.host, () => {
   console.log(`database: ${config.dbPath}`)
 })
 
+// A listen failure is fatal: say so in the log instead of leaving a pid file
+// behind with a process that never served a request.
+discuss.server.on('error', (error) => {
+  console.error(`dsh-discuss: cannot listen on ${config.host}:${config.port}: ${String(error)}`)
+  db.close()
+  process.exit(1)
+})
+
 let closing = false
 async function shutdown(signal) {
   if (closing) return
