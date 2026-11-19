@@ -271,7 +271,8 @@ PROBE_ANSWER=""
 is_up() {
   local url out code reason
   url="$(service_url "$1")healthz"
-  out=$("$CURL" -sS -o /dev/null -m 2 -w '\n%{http_code}' "$url" 2>&1 || true)
+  # A user-wide http_proxy must not intercept a probe of the local listener.
+  out=$("$CURL" -sS --noproxy '*' -o /dev/null -m 2 -w '\n%{http_code}' "$url" 2>&1 || true)
   code=${out##*$'\n'}
   reason=${out%$'\n'*}
   code=${code:-000}
@@ -415,7 +416,9 @@ cmd_status() {
   for name in "${SERVICES[@]}"; do
     pid=$(read_pid "$name")
     # A pid file outlives the process; say so instead of printing a stale number.
-    if [[ -n $pid ]] && ! kill -0 "$pid" 2>/dev/null; then pid="$pid (dead)"; fi
+    # /proc/$pid exists for every user's live process, while kill -0 fails with
+    # EPERM on another user's pid and would call a live service dead.
+    if [[ -n $pid ]] && [[ ! -d /proc/$pid ]]; then pid="$pid (dead)"; fi
     if is_up "$name"; then state=up; else state=down; fi
     printf '  %-8s %-4s %-30s pid %s\n' "$name" "$state" "$(service_url "$name")" "${pid:--}"
     info "log:      $(log_file "$name")"
