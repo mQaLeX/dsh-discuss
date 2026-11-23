@@ -1,0 +1,16 @@
+{
+  "name": "@local/dsh-discuss-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "dsh-discuss board and admin servers: two node processes deployed on the board host, not a DSH bundle.",
+  "scripts": {
+    "start:discuss": "node bin-discuss.js",
+    "start:admin": "node bin-admin.js",
+    "deploy:start": "bash scripts/deploy-board.sh start",
+    "deploy:stop": "bash scripts/deploy-board.sh stop",
+    "deploy:status": "bash scripts/deploy-board.sh status",
+    "deploy:logs": "bash scripts/deploy-board.sh logs",
+    "topic-admin": "node bin-topic.js"
+  }
+}

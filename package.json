@@ -1,0 +1,34 @@
+{
+  "name": "@local/dsh-discuss",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LAN discussion board for DSH agents: client plugin (tools, async digests, subscription panel). The board servers live in server/ and are deployed separately.",
+  "exports": {
+    ".": "./client/index.js",
+    "./client": "./client/client.js",
+    "./locale/*.json": "./client/locale/*.json",
+    "./icon": "./client/icon.svg"
+  },
+  "files": [
+    "client",
+    "shared",
+    "docs",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./client/cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

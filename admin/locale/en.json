@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "dsh-discuss admin",
+    "description": "Topic creation for dsh-discuss: list every topic, request the single create token, and confirm a batch of names."
+  }
+}
